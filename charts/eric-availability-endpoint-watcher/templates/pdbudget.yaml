@@ -1,0 +1,16 @@
+{{- $checkVersion := semverCompare ">=1.21-0" .Capabilities.KubeVersion.GitVersion -}}
+{{- if $checkVersion }}
+apiVersion: policy/v1
+{{- else }}
+apiVersion: policy/v1beta1
+{{- end }}
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    {{- include "adu-watcher.labels" . | nindent 4 }}
+  name: adu-pdb
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      {{- include "adu-watcher.selectorLabels" . | nindent 6 }}

@@ -1,0 +1,35 @@
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: adu-reader
+  labels:
+    {{- include "adu-watcher.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: [ "pods", "services", "endpoints", "secrets", "pods/exec", "events", "configmaps" ]
+    verbs: [ "get", "list", "watch", "describe", "exec", "create" ]
+  - apiGroups: ["apps"]
+    resources: [ "deployments" ]
+    verbs: [ "get", "list", "watch", "describe", ]
+  - apiGroups: [ "extensions" ]
+    resources: [ "deployments" ]
+    verbs: [ "get", "list", "watch", "exec" ]
+  - apiGroups: [ "chaos-mesh.org" ]
+    resources: [ "iochaos", "podchaos", "kernelchaos", "networkchaos", "podiochaos", "podnetworkchaos", "stresschaos", "timechaos", "seviceaccounts", "pods", "services", "endpoints", "secrets" ]
+    verbs: [ "get", "list", "watch", "exec", "create", "delete" ]
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: adu-reader
+  labels:
+    {{- include "adu-watcher.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.serviceAccount.name }}
+    namespace:
+    apiGroup: ""
+roleRef:
+  kind: Role
+  name: adu-reader
+  apiGroup: ""

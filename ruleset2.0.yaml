@@ -1,0 +1,257 @@
+#
+# COPYRIGHT Ericsson 2020
+#
+#
+#
+# The copyright to the computer program(s) herein is the property of
+#
+# Ericsson Inc. The programs may be used and/or copied only with written
+#
+# permission from Ericsson Inc. or in accordance with the terms and
+#
+# conditions stipulated in the agreement/contract under which the
+#
+# program(s) have been supplied.
+#
+
+modelVersion: 2.0
+
+description: "Availability endpoint watcher."
+
+docker-images:
+  - adp-release-auto: armdocker.rnd.ericsson.se/sandbox/adp-staging/adp-cicd/bob-adp-release-auto:latest
+  - maven-builder: armdocker.rnd.ericsson.se/proj-adp-cicd-drop/bob-javamvnbuilder.minideb:latest
+
+# List of constants
+properties:
+  - image-name: eric-availability-endpoint-watcher
+  - image-registry: armdocker.rnd.ericsson.se
+  - image-secret: armdocker
+  - image-dev-repopath: proj-availability-endpoint-watcher/proj-eric-availability-endpoint-watcher-dev
+  - image-ci-repopath: proj-availability-endpoint-watcher/proj-eric-availability-endpoint-watcher-ci-internal
+  - image-drop-repopath: proj-availability-endpoint-watcher/proj-eric-availability-endpoint-watcher-drop
+  - image-full-name: ${image-registry}/${image-drop-repopath}/${image-name}
+
+  - helm-chart-name: eric-availability-endpoint-watcher
+  - helm-chart-repo-server: https://arm.rnd.ki.sw.ericsson.se/artifactory
+  - helm-chart-dev-repopath: proj-eric-availability-endpoint-watcher-dev-helm
+  - helm-chart-ci-repopath: proj-eric-availability-endpoint-watcher-ci-internal-helm
+  - helm-chart-drop-repopath: proj-eric-availability-endpoint-watcher-drop-helm
+  - docker-network-flags: --network="host"
+  - helm-chart-drop-repo: ${helm-chart-repo-server}/${helm-chart-drop-repopath}
+
+  # Functional ID for your Team or CI group to push to Gerrit repo
+  - git-user: lciadm100
+  - git-repo-path: OSS/com.ericsson.oss.ci.rtd/availability-endpoint-watcher
+  - git-repo-url: ssh://${git-user}@gerrit-gamma.gic.ericsson.se:29418/${git-repo-path}
+  - git-repo: https://gerrit-gamma.gic.ericsson.se/#/admin/projects/${git-repo-path}
+
+# Import environment variables (e.g. Jenkins parameters)
+env:
+  - PWD
+  - HOME
+  - USER (default=local)
+  - RELEASE (default=true)
+  - GERRIT_PATCHSET_REVISION (default=HEAD)
+  - GERRIT_USERNAME
+  - GERRIT_PASSWORD
+  - GERRIT_CHANGE_NUMBER
+  - JIRA_USERNAME
+  - JIRA_PASSWORD
+  - DOCKER_CONFIG (default=$HOME/.docker/config.json)
+  - BUILD_DATE (default = $(date +%d%m%Y-%H%M%S --utc))
+  - AUTHOR_NAME
+  - AUTHOR_EMAIL
+  - GIT_COMMITTER_NAME
+  - GIT_COMMITTER_EMAIL
+  - ENABLE_HELM_V3 (default=true)
+  - HELM_REPO_API_TOKEN
+
+
+# Variables, set by below tasks
+var:
+  - version
+  - commithash
+  - image-repopath-internal
+  - image-full-name-internal
+  - image-repopath-drop
+  - image-full-name-drop
+  - helm-chart-repo-internal
+  - gitroot
+  - submodparam
+  - pri_params
+  - docker_config_basepath
+
+
+# Rules to execute
+rules:
+  clean:
+    - task: rm
+      cmd:
+        - rm -rf build/
+        - rm -rf .bob/
+        - rm -rf
+    - task: mvn-clean
+      docker-image: maven-builder
+      docker-flags:
+        - "--volume ${env.HOME}:${env.HOME}"
+      cmd: mvn -Duser.home=${env.HOME} clean -f watcher/pom.xml
+
+  init-review:
+    - task: version
+      docker-image: adp-release-auto
+      cmd: generate-version --is-release false --output version
+    - task: commit
+      docker-image: adp-release-auto
+      cmd: git rev-parse --short HEAD > .bob/var.commithash
+    - task: image-repopath-internal
+      cmd: echo "${image-ci-repopath}" > .bob/var.image-repopath-internal
+    - task: image-full-name-internal
+      cmd: echo "${image-registry}/${image-ci-repopath}/${image-name}" > .bob/var.image-full-name-internal
+    - task: helm-chart-repo-internal
+      cmd: echo "${helm-chart-repo-server}/${helm-chart-ci-repopath}" > .bob/var.helm-chart-repo-internal
+    - task: set-upload
+      cmd: echo "--debug" > .bob/var.pri_params
+
+  # Drop level tasks: used by CI to publish artifacts after successful CI pipeline execution for a drop build
+  init-drop:
+    - task: version
+      docker-image: adp-release-auto
+      cmd: generate-version -f VERSION_PREFIX --is-release true --output version
+    - task: commit
+      docker-image: adp-release-auto
+      cmd: git rev-parse --short HEAD > .bob/var.commithash
+    - task: image-repopath-drop
+      cmd: echo "${image-drop-repopath}" > .bob/var.image-repopath-drop
+    - task: image-full-name-internal
+      cmd: echo "${image-registry}/${image-ci-repopath}/${image-name}" > .bob/var.image-full-name-internal
+    - task: image-full-name-drop
+      cmd: echo "${image-registry}/${image-drop-repopath}/${image-name}" > .bob/var.image-full-name-drop
+    - task: helm-chart-repo-internal
+      cmd: echo "${helm-chart-repo-server}/${helm-chart-ci-repopath}" > .bob/var.helm-chart-repo-internal
+    - task: adp-artifacts-properties
+      docker-image: adp-release-auto
+      cmd: generate-adp-artifacts
+        --chart-name ${helm-chart-name}
+        --chart-version ${var.version}
+        --chart-repo ${helm-chart-drop-repo}
+        --image-name ${image-name}
+        --image-version ${var.version}
+        --image-repo "${image-registry}/${var.image-repopath-internal}"
+    - task: set-upload
+      cmd: echo "--debug --upload" > .bob/var.pri_params
+    - task: write-git-details
+      cmd:
+        - echo "GIT_TAG=$(git log -1 --pretty=format:'%h')" >> artifact.properties
+        - echo "GIT_COMMIT_AUTHOR=$(git log -1 --pretty=format:'%an')" >> artifact.properties
+        - echo "GIT_COMMIT_SUMMARY=$(git log -1 --pretty=format:'%s')" >> artifact.properties
+
+
+  # lint
+  # todo: update what files are being linted...
+  lint:
+    - task: lint
+      cmd: docker run --rm -v ${env.PWD}:/data cytopia/yamllint -c .yamllint /data/ruleset2.0.yaml
+
+  lint-dockerfile:
+    - task: dockerfile-lint
+      cmd:
+        - docker run --rm -i hadolint/hadolint < Dockerfile | tee ./dockerfilelint.log
+
+  # Build war
+  build:
+    - task: mvn-package
+      docker-image: maven-builder
+      docker-flags:
+        - "--volume ${env.HOME}:${env.HOME}"
+      cmd: mvn -Duser.home=${env.HOME} clean install -f watcher/pom.xml -Ddockerfile.skip -DskipTests=true
+
+  # Build a docker image tagging with ci internal repository
+  build-image:
+    - task: docker-build
+      cmd: docker build ${env.PWD}
+        --file Dockerfile
+        --build-arg BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+        --build-arg COMMIT=${var.commithash}
+        --build-arg APP_VERSION=${var.version}
+        --tag ${var.image-full-name-internal}:${var.version}
+
+  # Push image to ci-internal repo
+  push-image-internal:
+    - task: image-push-internal
+      cmd: docker push ${var.image-full-name-internal}:${var.version}
+
+  # Create local version of helm chart for internal
+  build-helm-internal:
+    - task: build-helm-chart
+      docker-image: adp-release-auto
+      docker-flags:
+        - -e ENABLE_HELM_V3=true
+      cmd: helm-package
+        --folder charts/${helm-chart-name}
+        --workdir .bob --output .bob/${helm-chart-name}-internal
+        --version ${var.version}
+        --app-version ${var.version}
+        --replace REPO_PATH=${var.image-full-name-internal}
+
+  # Create local version of helm chart for drop
+  build-helm-drop:
+    - task: build-helm-chart
+      docker-image: adp-release-auto
+      docker-flags:
+        - -e ENABLE_HELM_V3=true
+      cmd: helm-package
+        --folder charts/${helm-chart-name}
+        --workdir .bob --output build
+        --version ${var.version}
+        --app-version ${var.version}
+        --replace REPO_PATH=${image-full-name}
+        --replace REPO_URL=${image-registry}
+
+  # Push image to ci-internal repo, create internal version of helm chart and pushes it to internal repo
+  push-helm-internal:
+    - rule: build-helm-internal
+    - task: helm-upload-internal
+      docker-image: adp-release-auto
+      cmd: upload_file.sh
+        --filename=.bob/${helm-chart-name}-internal/${helm-chart-name}-${var.version}.tgz
+        --repository=${var.helm-chart-repo-internal}/${helm-chart-name}
+        --api-token=${env.HELM_REPO_API_TOKEN}
+
+  push-image-drop:
+    - task: image-pull-internal
+      cmd: docker pull ${var.image-full-name-internal}:${var.version}
+    - task: image-tag-public
+      cmd:
+        - docker tag ${var.image-full-name-internal}:${var.version} ${image-full-name}:${var.version}
+        - docker tag ${var.image-full-name-internal}:${var.version} ${image-full-name}:latest
+    - task: image-push-public
+      cmd:
+        - docker push ${image-full-name}:${var.version}
+        - docker push ${image-full-name}:latest
+    - task: git-tag
+      cmd:
+        - git config --global user.name ${git-user}
+        - git config --global user.email "lciadm100@ericsson.com"
+        - git config --global -l
+        - git tag -af ${var.version} -m "Release ${var.version}"
+        - git remote set-url origin ${git-repo-url}
+        - git status
+        - git push origin ${var.version} || true
+
+  # Push image to ci-internal repo, create internal version of helm chart and pushes it to internal repo
+  push-helm-drop:
+    - rule: build-helm-drop
+    - task: helm-upload
+      docker-image: adp-release-auto
+      cmd: upload_file.sh
+        --filename=build/${helm-chart-name}-${var.version}.tgz
+        --repository=${helm-chart-drop-repo}/${helm-chart-name}
+        --api-token=${env.HELM_REPO_API_TOKEN}
+
+  remove-image-with-all-tags:
+    - task: remove-docker-image-with-tags
+      cmd:
+        - docker image remove ${image-full-name}:${var.version}
+        - docker image remove ${image-full-name}:latest
+

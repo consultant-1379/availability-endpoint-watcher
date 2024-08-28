@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Values.persistence.persistentVolumeClaim.name }}
+  labels:
+    {{- include "adu-watcher.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: {{ .Values.persistence.persistentVolumeClaim.size }}
+  storageClassName: {{ .Values.persistence.persistentVolumeClaim.storageClassName }}
+  volumeMode: Filesystem

@@ -1,0 +1,109 @@
+# Default values for adu-watcher.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+replicaCount: 2
+
+image:
+  repository: REPO_PATH
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: adu-watcher
+fullnameOverride: adu-watcher
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: adu-reader-sa
+
+podSecurityContext:
+  fsGroup: 294612
+
+securityContext:
+  allowPrivilegeEscalation: false
+  privileged: false
+  readOnlyRootFilesystem: false
+  runAsNonRoot: true
+  runAsUser: 294612
+  capabilities:
+    drop:
+      - all
+    add:
+      - CHOWN
+  # capabilities:
+  #   drop:
+  #   - ALL
+  # readOnlyRootFilesystem: true
+  # runAsNonRoot: true
+  # runAsUser: 1000
+
+deployment:
+  containerPort: 7500
+  httpPort: 8080
+  mountPath: /var/adu/data
+
+service:
+  type: ClusterIP
+  port: 7500
+  targetPort: 8080
+
+ingress:
+  enabled: true
+  class:
+  annotations: {}
+    # kubernetes.io/ingress.class: nginx
+    # kubernetes.io/tls-acme: "true"
+  hosts:
+    - host: $replace.ingress.host
+      paths: [/watcher/]
+  tls:
+    #  - secretName: chart-example-tls
+    - hosts:
+        - $replace.ingress.host
+
+resources:
+  # We usually recommend not to specify default resources and to leave this as a conscious
+  # choice for the user. This also increases chances charts run on environments with little
+  # resources, such as Minikube. If you do want to specify resources, uncomment the following
+  # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
+  # limits:
+  #   cpu: 100m
+  #   memory: 128Mi
+  requests:
+    #   cpu: 100m
+    memory: 1Gi
+  limits:
+    memory: 2Gi
+
+persistence:
+  persistentVolumeClaim:
+    # Mandatory: volume size
+    # keep at default value unless required for dimensioning or compatibility with storage provision
+    # minimum supported volume size is 500Mi, maximum usable volume size is 10Gi, default size is 500Mi
+    size: 1Gi
+    name: adu-pvc
+    storageClassName: nfs-enm
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity:
+  podAntiAffinity: hard
+
+timezone:
+  path: /usr/share/zoneinfo/Europe/Dublin
+
+updateStrategy:
+  rollingUpdate:
+    maxUnavailable: 1
+    maxSurge: 0
+  type: RollingUpdate
+
+chaosRegression:
+  enabled: false
